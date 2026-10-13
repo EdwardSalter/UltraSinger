@@ -19,26 +19,48 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 ENV UV_LINK_MODE=copy
 
-# copy pyproject.toml first to leverage container image build cache
-COPY ./pyproject.toml /app/UltraSinger/pyproject.toml
+# copy pyproject.toml and uv.lock first to leverage container image build cache
+COPY ./pyproject.toml ./uv.lock /app/UltraSinger/
 # Need to copy some minimal source structure for editable install
 RUN mkdir -p /app/UltraSinger/src
 WORKDIR /app/UltraSinger
 
-# Install dependencies from pyproject.toml directly without venv (container is already isolated)
-# Using build isolation (without --no-build-isolation) so uv handles all build dependencies automatically
-RUN uv pip install --system --python 3.12 -e .
+# Install the exact versions pinned in uv.lock (unpinned deps like swift-f0 have had breaking API changes),
+# directly without venv (container is already isolated)
+RUN uv export --frozen --no-dev --no-hashes --no-emit-project -o /tmp/requirements.txt \
+    && uv pip install --system --python 3.12 -r /tmp/requirements.txt \
+    && uv pip install --system --python 3.12 --no-deps -e . \
+    && rm /tmp/requirements.txt
 
 # Install PyTorch with CUDA support (override the CPU version from pyproject.toml)
-RUN uv pip install --system --python 3.12 torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128 --reinstall
+# Only reinstall the torch packages: a blanket --reinstall also pulls newer deps (e.g. numpy) from the PyTorch index,
+# overriding the uv.lock versions.
+# uv.lock also has torchcodec 0.10 (built for torch 2.10); torch 2.8 needs torchcodec 0.7 (used by pyannote for audio decoding)
+RUN uv pip install --system --python 3.12 torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128 \
+    --reinstall-package torch --reinstall-package torchvision --reinstall-package torchaudio \
+    && uv pip install --system --python 3.12 "torchcodec==0.7.*"
+
+# YouTube changes constantly, so always take the latest yt-dlp (+ yt-dlp-ejs challenge solver) and deno rather than the locked versions.
+# Kept as its own late layer; bump YTDLP_REFRESH (e.g. --build-arg YTDLP_REFRESH=$(date +%s)) to re-pull it cheaply.
+ARG YTDLP_REFRESH=0
+RUN echo "yt-dlp refresh: $YTDLP_REFRESH" && uv pip install --system --python 3.12 --upgrade "yt-dlp[default]" deno
+
+# Ubuntu 22.04's python3 is 3.10, but dependencies are installed for 3.12.
+# Point python/python3 at 3.12 via /usr/local/bin (ahead of /usr/bin on PATH) so apt's own /usr/bin/python3 is untouched.
+RUN ln -sf /usr/bin/python3.12 /usr/local/bin/python3 \
+    && ln -sf /usr/bin/python3.12 /usr/local/bin/python
 
 # copy sources late to allow for caching of layers which contain all the dependencies
 COPY . /app/UltraSinger
 
 
 # no need to run as root
-RUN chown -R 1000:1000 /app/UltraSinger
+# Create a real user with a home dir so numba/matplotlib/model caches (~/.cache, ~/.config) are writable
+RUN groupadd -g 1000 ultrasinger \
+    && useradd -m -u 1000 -g 1000 -s /bin/bash ultrasinger \
+    && chown -R 1000:1000 /app/UltraSinger
 USER 1000:1000
+ENV HOME=/home/ultrasinger
 
 WORKDIR /app/UltraSinger/src
 CMD ["bash"]
