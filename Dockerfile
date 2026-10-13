@@ -43,6 +43,14 @@ RUN uv pip install --system --python 3.12 torch==2.8.0 torchvision==0.23.0 torch
 ARG YTDLP_REFRESH=0
 RUN echo "yt-dlp refresh: $YTDLP_REFRESH" && uv pip install --system --python 3.12 --upgrade "yt-dlp[default]" deno
 
+# MuseScore for sheet music PDFs (music21 calls it via the mscore binary on PATH).
+# No display in the container, so run Qt offscreen.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends musescore3 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+ENV QT_QPA_PLATFORM=offscreen
+
 # Ubuntu 22.04's python3 is 3.10, but dependencies are installed for 3.12.
 # Point python/python3 at 3.12 via /usr/local/bin (ahead of /usr/bin on PATH) so apt's own /usr/bin/python3 is untouched.
 RUN ln -sf /usr/bin/python3.12 /usr/local/bin/python3 \
