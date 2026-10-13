@@ -13,9 +13,9 @@ def _get_detector():
     """Lazy initialize SwiftF0 detector"""
     global _swift_f0_detector
     if _swift_f0_detector is None:
-        # Initialize for general music/speech (wide frequency range) fmin=46.875, fmax=2093.75
-        # For speech only: fmin=65, fmax=400
-        _swift_f0_detector = SwiftF0(fmin=46.875, fmax=2093.75, confidence_threshold=0.9)
+        # Defaults to the full model range (46.875-2093.75 Hz); pass fmin/fmax to detect() to narrow it,
+        # e.g. fmin=65, fmax=400 for speech only
+        _swift_f0_detector = SwiftF0()
     return _swift_f0_detector
 
 
@@ -57,13 +57,12 @@ def get_pitch_with_swift_f0(
 ) -> PitchedData:
     """Pitch detection using SwiftF0
 
-    SwiftF0 processes audio at 16kHz with 256-sample hop size internally.
-    Returns frames at approximately 62.5 ms intervals.
+    SwiftF0 processes audio at 16kHz with 256-sample hop size internally (16 ms frames).
     """
     detector = _get_detector()
 
     # Detect pitch
-    result = detector.detect_from_array(audio, sample_rate)
+    result = detector.detect(audio, sample_rate)
 
     # Convert to PitchedData format
     times = [float(t) for t in result.timestamps]

@@ -35,10 +35,8 @@ RUN uv export --frozen --no-dev --no-hashes --no-emit-project -o /tmp/requiremen
 # Install PyTorch with CUDA support (override the CPU version from pyproject.toml)
 # Only reinstall the torch packages: a blanket --reinstall also pulls newer deps (e.g. numpy) from the PyTorch index,
 # overriding the uv.lock versions.
-# uv.lock also has torchcodec 0.10 (built for torch 2.10); torch 2.8 needs torchcodec 0.7 (used by pyannote for audio decoding)
 RUN uv pip install --system --python 3.12 torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128 \
-    --reinstall-package torch --reinstall-package torchvision --reinstall-package torchaudio \
-    && uv pip install --system --python 3.12 "torchcodec==0.7.*"
+    --reinstall-package torch --reinstall-package torchvision --reinstall-package torchaudio
 
 # YouTube changes constantly, so always take the latest yt-dlp (+ yt-dlp-ejs challenge solver) and deno rather than the locked versions.
 # Kept as its own late layer; bump YTDLP_REFRESH (e.g. --build-arg YTDLP_REFRESH=$(date +%s)) to re-pull it cheaply.
